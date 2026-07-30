@@ -3,7 +3,7 @@ import numpy as np
 
 # CONFIG
 
-INPUT_PATH = "user_health_data_per_minute.csv"
+INPUT_PATH = "user_health_data_per_minute_users_41-80.csv"
 OUTPUT_CLEAN_PATH = "wearable_data_cleaned.csv"
 OUTPUT_REPORT_PATH = "data_quality_report.csv"
 
