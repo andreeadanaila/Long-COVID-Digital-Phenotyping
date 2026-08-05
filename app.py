@@ -1,3 +1,4 @@
+import time
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -18,7 +19,7 @@ st.set_page_config(page_title="Long COVID Monitoring", layout="wide", page_icon=
 # -----------------------------------------------------------------
 st.markdown("""
 <style>
-    .main { background-color: #F7F9FC; }
+    .stApp, .main { background-color: var(--background-color); }
     .metric-card {
         background: white;
         color: #1A1D29;
@@ -202,7 +203,7 @@ with col4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 if risk_score >= RISK_HIGH:
-    st.error("⚠️ Elevated risk detected. Consider reducing activity and "
+    st.error(" Elevated risk detected. Consider reducing activity and "
              "monitoring symptoms closely over the next 12 hours.")
 
 # -----------------------------------------------------------------
@@ -286,7 +287,7 @@ if signal_choice:
 # -----------------------------------------------------------------
 # Share with doctor (simple demo version)
 # -----------------------------------------------------------------
-with st.expander("Share with doctor"):
+with st.expander(" Share with doctor"):
     st.write(f"**Patient:** #{selected_patient}")
     st.write(f"**Current risk (next 12h):** {risk_score*100:.0f}% ({risk_label})")
     st.write(f"**Model confidence:** {(1-uncertainty)*100:.0f}%")
