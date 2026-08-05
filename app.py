@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 # -----------------------------------------------------------------
 # CONFIG
 # -----------------------------------------------------------------
-DATA_PATH = "C:/Users/monic/Desktop/project_practica/dashboard_data.csv"
+DATA_PATH = "dashboard_data.csv"
 RISK_HIGH = 0.7   # above this = red
 RISK_MEDIUM = 0.4  # above this = yellow, below = green
 
@@ -146,6 +146,29 @@ if risk_score >= RISK_HIGH:
              "monitoring symptoms closely over the next 12 hours.")
 
 # -----------------------------------------------------------------
+# NEW - Why this score (explainability)
+# Shows which signals are driving the current prediction, so this
+# reads as a decision-support tool rather than an unexplained number.
+# -----------------------------------------------------------------
+factor_cols = ["top_factor_1", "top_factor_2", "top_factor_3"]
+if all(col in latest.index for col in factor_cols):
+    st.markdown("### Why this score?")
+    factors = [latest[c] for c in factor_cols if pd.notna(latest[c])]
+    if factors:
+        badges = " ".join(
+            f'<span class="risk-badge risk-medium" style="margin-right:8px;">{f}</span>'
+            for f in factors
+        )
+        st.markdown(
+            f'<div class="metric-card">This risk estimate is mainly driven by: '
+            f'{badges}</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Ranked by how unusual each signal is for this patient right now, "
+                   "weighted by how much the model relies on that signal overall.")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------
 # Risk trend chart
 # -----------------------------------------------------------------
 st.markdown("### Risk score over time")
@@ -199,6 +222,10 @@ with st.expander("📤 Share with doctor"):
     st.write(f"**Patient:** #{selected_patient}")
     st.write(f"**Current risk (next 12h):** {risk_score*100:.0f}% ({risk_label})")
     st.write(f"**Model confidence:** {(1-uncertainty)*100:.0f}%")
+    if all(col in latest.index for col in factor_cols):
+        main_factors = [latest[c] for c in factor_cols if pd.notna(latest[c])]
+        if main_factors:
+            st.write(f"**Main contributing signals:** {', '.join(main_factors)}")
     st.write(f"**Last heart rate:** {latest['heart_rate']:.0f} bpm")
     st.write(f"**Last SpO2:** {latest['spo2']:.0f}%")
     st.caption("In a full version, this would generate a secure link or "

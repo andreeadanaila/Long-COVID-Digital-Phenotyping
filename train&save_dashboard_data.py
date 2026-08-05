@@ -17,8 +17,8 @@ from sklearn.ensemble import RandomForestClassifier
 # -----------------------------------------------------------------
 # CONFIG
 # -----------------------------------------------------------------
-INPUT_PATH = "C:/Users/monic/Desktop/wearable_data_all_patients.csv"
-OUTPUT_DASHBOARD_PATH = "C:/Users/monic/Desktop/project_practica/dashboard_data.csv"
+INPUT_PATH = "wearable_data_all_patients.csv"
+OUTPUT_DASHBOARD_PATH = "dashboard_data.csv"
 
 SIGNAL_COLS = [
     "heart_rate", "heart_rate_variability", "spo2", "steps",
@@ -148,19 +148,79 @@ df_recent["uncertainty"] = tree_probs.std(axis=0)
 print("Risk scores computed.")
 
 # -----------------------------------------------------------------
+# STEP 4b: NEW - explainability. For each prediction, rank which
+# signals are driving the risk score. Combines the model's global
+# feature importance (learned during training) with how abnormal
+# each signal currently is for this specific patient (their z-score
+# right now). No new dependency (SHAP etc.) needed for this.
+# -----------------------------------------------------------------
+print("Computing per-prediction explainability...")
+
+readable_names = {
+    "heart_rate": "Heart Rate", "heart_rate_variability": "Heart Rate Variability",
+    "spo2": "SpO2", "steps": "Steps", "respirations_per_minute": "Respiration Rate",
+    "distance": "Distance", "body_battery": "Body Battery",
+}
+
+# 'steps' and 'distance' are cumulative daily counters that reset to 0 every
+# day and climb monotonically until the next reset - their z-score/trend
+# doesn't reflect a genuine physiological deviation the way it does for the
+# other signals, it mostly tracks time-of-day. Excluding them here so the
+# explanation reflects real physiological drivers, consistent with the
+# earlier ablation study (which found body_battery mattered most and
+# steps/distance barely mattered at all).
+EXPLAINABILITY_SIGNALS = [c for c in SIGNAL_COLS if c not in ("steps", "distance")]
+
+importances = dict(zip(feature_cols, final_model.feature_importances_))
+# Combine the raw + zscore + trend importance for each underlying signal,
+# since the model sees each signal as 3 separate features.
+signal_importance = {
+    col: importances[col] + importances[f"{col}_zscore"] + importances[f"{col}_zscore_trend"]
+    for col in EXPLAINABILITY_SIGNALS
+}
+
+contribution_matrix = np.zeros((len(X_recent), len(EXPLAINABILITY_SIGNALS)))
+for i, col in enumerate(EXPLAINABILITY_SIGNALS):
+    contribution_matrix[:, i] = signal_importance[col] * X_recent[f"{col}_zscore"].abs().values
+
+top_indices = np.argsort(-contribution_matrix, axis=1)[:, :3]
+for rank in range(3):
+    df_recent[f"top_factor_{rank + 1}"] = [
+        readable_names[EXPLAINABILITY_SIGNALS[idx]] for idx in top_indices[:, rank]
+    ]
+
+print("Explainability columns ready (top_factor_1/2/3).")
+
+# -----------------------------------------------------------------
 # STEP 5: Downsample for a lighter, smoother dashboard file
 # -----------------------------------------------------------------
 print(f"Downsampling to {DISPLAY_RESOLUTION_MINUTES}-minute resolution...")
 
-display_cols = ["user_id", "received_date"] + SIGNAL_COLS + ["risk_score", "uncertainty"]
+display_cols = (
+    ["user_id", "received_date"] + SIGNAL_COLS
+    + ["risk_score", "uncertainty", "top_factor_1", "top_factor_2", "top_factor_3"]
+)
 df_recent = df_recent[display_cols]
+
+numeric_cols = SIGNAL_COLS + ["risk_score", "uncertainty"]
+categorical_cols = ["top_factor_1", "top_factor_2", "top_factor_3"]
 
 dashboard_parts = []
 for uid, g in df_recent.groupby("user_id"):
-    g = g.set_index("received_date").resample(f"{DISPLAY_RESOLUTION_MINUTES}min").mean()
-    g["user_id"] = uid
-    g = g.reset_index()
-    dashboard_parts.append(g)
+    g_indexed = g.set_index("received_date")
+    numeric_resampled = g_indexed[numeric_cols].resample(f"{DISPLAY_RESOLUTION_MINUTES}min").mean()
+    # Take the 3 factor columns from a single representative row (the most
+    # recent one in each window), NOT an independent per-column vote - voting
+    # per column separately can pick different original rows for each rank,
+    # which can produce duplicates across top_factor_1/2/3 even though every
+    # individual original prediction always had 3 distinct signals.
+    categorical_resampled = g_indexed[categorical_cols].resample(
+        f"{DISPLAY_RESOLUTION_MINUTES}min"
+    ).last()
+    combined = numeric_resampled.join(categorical_resampled)
+    combined["user_id"] = uid
+    combined = combined.reset_index()
+    dashboard_parts.append(combined)
 
 dashboard_data = pd.concat(dashboard_parts, ignore_index=True)
 dashboard_data = dashboard_data.dropna()
