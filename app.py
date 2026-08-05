@@ -1,13 +1,3 @@
-"""
-STEP 2 - The web app itself.
-
-Run with (in Anaconda Prompt or Spyder's terminal, NOT with F5):
-    streamlit run app.py
-
-Reads dashboard_data.csv (created by train_and_save_dashboard_data.py)
-and displays it as an interactive dashboard.
-"""
-
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -29,10 +19,28 @@ st.markdown("""
     .main { background-color: #F7F9FC; }
     .metric-card {
         background: white;
+        color: #1A1D29;
         border-radius: 16px;
         padding: 20px 24px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.04);
         border: 1px solid #EEF1F6;
+        height: 160px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 8px;
+    }
+    .info-card {
+        background: white;
+        color: #1A1D29;
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        border: 1px solid #EEF1F6;
+        text-align: left;
     }
     .metric-label {
         color: #8A94A6;
@@ -42,6 +50,7 @@ st.markdown("""
         letter-spacing: 0.4px;
     }
     .metric-value {
+        color: #1A1D29;
         font-size: 32px;
         font-weight: 700;
         margin-top: 4px;
@@ -52,6 +61,7 @@ st.markdown("""
         border-radius: 999px;
         font-weight: 600;
         font-size: 14px;
+        width: fit-content;
     }
     .risk-low { background: #E6F7EE; color: #1B9E5A; }
     .risk-medium { background: #FFF4E0; color: #C97F00; }
@@ -160,7 +170,7 @@ if all(col in latest.index for col in factor_cols):
             for f in factors
         )
         st.markdown(
-            f'<div class="metric-card">This risk estimate is mainly driven by: '
+            f'<div class="info-card">This risk estimate is mainly driven by: '
             f'{badges}</div>',
             unsafe_allow_html=True,
         )
@@ -181,12 +191,16 @@ fig_risk.add_trace(go.Scatter(
     name="Risk score",
 ))
 fig_risk.add_hline(y=RISK_HIGH, line_dash="dot", line_color="#D92D2D",
-                    annotation_text="High risk threshold")
+                    annotation_text="High risk threshold",
+                    annotation_font_color="#1A1D29")
 fig_risk.update_layout(
     height=280, margin=dict(l=10, r=10, t=10, b=10),
     plot_bgcolor="white", paper_bgcolor="white",
-    yaxis=dict(range=[0, 1], title="Risk"),
-    xaxis=dict(title=""),
+    font=dict(color="#1A1D29"),
+    yaxis=dict(range=[0, 1], title="Risk", color="#1A1D29",
+               tickfont=dict(color="#1A1D29")),
+    xaxis=dict(title="", color="#1A1D29",
+               tickfont=dict(color="#1A1D29")),
 )
 st.plotly_chart(fig_risk, use_container_width=True)
 
@@ -211,7 +225,11 @@ if signal_choice:
     fig_signals.update_layout(
         height=320, margin=dict(l=10, r=10, t=10, b=10),
         plot_bgcolor="white", paper_bgcolor="white",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        font=dict(color="#1A1D29"),
+        xaxis=dict(color="#1A1D29", tickfont=dict(color="#1A1D29")),
+        yaxis=dict(color="#1A1D29", tickfont=dict(color="#1A1D29")),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    font=dict(color="#1A1D29")),
     )
     st.plotly_chart(fig_signals, use_container_width=True)
 
