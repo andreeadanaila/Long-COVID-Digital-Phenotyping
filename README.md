@@ -8,4 +8,4 @@ Steps we take:
 - Federated learning, level 2 (3 clients from the 9 patients, model aggregation)
 - Simple dashboard/web app showing signal graphs, current risk score, trend, alerts, and an option to share with a doctor(partial done)
   
-  Sper ca e bine cat de cat ce am facut claude ul zice da acuma sper ca nu a luat-o pe carare si zice da la orice...:))))))-Monica
+  
