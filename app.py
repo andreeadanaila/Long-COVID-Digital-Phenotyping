@@ -1,6 +1,8 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from fpdf import FPDF
+from io import BytesIO
 
 # -----------------------------------------------------------------
 # CONFIG
@@ -80,10 +82,58 @@ def load_data():
 df = load_data()
 
 # -----------------------------------------------------------------
+# PDF report generator - builds a one-page summary in memory,
+# no file is saved to disk, it's streamed straight to the browser.
+# -----------------------------------------------------------------
+def generate_patient_pdf(patient_id, latest_row, risk_label, main_factors):
+    pdf = FPDF()
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 12, "Long COVID Monitor - Patient Report", ln=True)
+
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(90, 90, 90)
+    pdf.cell(0, 8, f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
+    pdf.ln(4)
+
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, f"Patient #{patient_id}", ln=True)
+
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, f"Last update: {latest_row['received_date']}", ln=True)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, f"Risk (next 12h): {latest_row['risk_score']*100:.0f}%  ({risk_label})", ln=True)
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, f"Model confidence: {(1 - latest_row['uncertainty'])*100:.0f}%", ln=True)
+    pdf.cell(0, 8, f"Heart rate: {latest_row['heart_rate']:.0f} bpm", ln=True)
+    pdf.cell(0, 8, f"SpO2: {latest_row['spo2']:.0f}%", ln=True)
+    pdf.ln(4)
+
+    if main_factors:
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Main contributing signals:", ln=True)
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 8, ", ".join(main_factors), ln=True)
+        pdf.ln(4)
+
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(120, 120, 120)
+    pdf.multi_cell(0, 6, "This tool supports clinical decisions. "
+                         "It is not an autonomous diagnostic system.")
+
+    # fpdf2 returns a bytearray - BytesIO wraps it for st.download_button
+    return BytesIO(pdf.output())
+
+
+# -----------------------------------------------------------------
 # Sidebar - patient selector
 # -----------------------------------------------------------------
 with st.sidebar:
-    st.markdown("## 💙 Long COVID Monitor")
+    st.markdown("## Long COVID Monitor")
     st.caption("Personalized digital phenotyping dashboard")
     st.markdown("---")
     patient_ids = sorted(df["user_id"].unique())
@@ -236,15 +286,24 @@ if signal_choice:
 # -----------------------------------------------------------------
 # Share with doctor (simple demo version)
 # -----------------------------------------------------------------
-with st.expander("📤 Share with doctor"):
+with st.expander("Share with doctor"):
     st.write(f"**Patient:** #{selected_patient}")
     st.write(f"**Current risk (next 12h):** {risk_score*100:.0f}% ({risk_label})")
     st.write(f"**Model confidence:** {(1-uncertainty)*100:.0f}%")
+    main_factors = []
     if all(col in latest.index for col in factor_cols):
         main_factors = [latest[c] for c in factor_cols if pd.notna(latest[c])]
         if main_factors:
             st.write(f"**Main contributing signals:** {', '.join(main_factors)}")
     st.write(f"**Last heart rate:** {latest['heart_rate']:.0f} bpm")
     st.write(f"**Last SpO2:** {latest['spo2']:.0f}%")
-    st.caption("In a full version, this would generate a secure link or "
-               "PDF for the treating physician.")
+
+    pdf_bytes = generate_patient_pdf(selected_patient, latest, risk_label, main_factors)
+    st.download_button(
+        label="Download PDF report",
+        data=pdf_bytes,
+        file_name=f"patient_{selected_patient}_report.pdf",
+        mime="application/pdf",
+    )
+    st.caption("In a full version, this would also generate a secure "
+               "shareable link for the treating physician.")
