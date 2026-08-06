@@ -170,13 +170,15 @@ with st.sidebar:
     patient_ids = sorted(df["user_id"].unique())
     selected_patient = st.selectbox("Select patient", patient_ids)
     st.markdown("---")
+    view_mode = st.radio("View", ["Patient view", "Doctor view"], horizontal=True)
+    is_doctor_view = view_mode == "Doctor view"
+    st.markdown("---")
     st.caption("This tool supports clinical decisions. "
                "It is not an autonomous diagnostic system.")
 
 patient_df = df[df["user_id"] == selected_patient].sort_values("received_date")
 
 # Guard: no data for this patient
-# astea sunt asa de forma ca noi am dat clean la dataset
 if patient_df.empty:
     st.warning(f"No data available for patient #{selected_patient}.")
     st.stop()
@@ -308,6 +310,40 @@ if all(col in latest.index for col in factor_cols):
                    "weighted by how much the model relies on that signal overall.")
     st.markdown("<br>", unsafe_allow_html=True)
 
+all_signals = ["heart_rate", "spo2", "body_battery", "heart_rate_variability", "steps"]
+
+# -----------------------------------------------------------------
+# Doctor view only - alert history and raw signal stats
+# -----------------------------------------------------------------
+if is_doctor_view:
+    st.markdown("### Alert history")
+    if os.path.exists(ALERTS_LOG_PATH):
+        alerts_log = pd.read_csv(ALERTS_LOG_PATH, parse_dates=["alert_time"])
+        patient_alerts = alerts_log[alerts_log["user_id"] == selected_patient].sort_values(
+            "alert_time", ascending=False
+        )
+        if patient_alerts.empty:
+            st.caption("No high-risk episodes detected in the monitored period for this patient.")
+        else:
+            st.dataframe(patient_alerts, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No high-risk episodes detected in the monitored period for this patient.")
+
+    st.markdown("### Signal stats (personal baseline)")
+    stats_rows = []
+    for sig in all_signals:
+        if sig in patient_df.columns:
+            stats_rows.append({
+                "signal": sig,
+                "mean": round(patient_df[sig].mean(), 2),
+                "std": round(patient_df[sig].std(), 2),
+                "last value": round(patient_df[sig].iloc[-1], 2),
+            })
+    st.dataframe(pd.DataFrame(stats_rows), use_container_width=True, hide_index=True)
+    st.caption(f"Model confidence (1 - uncertainty): {(1-uncertainty)*100:.1f}%  |  "
+               f"raw uncertainty: {uncertainty:.3f}")
+    st.markdown("<br>", unsafe_allow_html=True)
+
 # -----------------------------------------------------------------
 # Risk trend chart - with uncertainty band (risk +/- uncertainty)
 # -----------------------------------------------------------------
@@ -372,7 +408,6 @@ st.plotly_chart(fig_risk, use_container_width=True)
 # -----------------------------------------------------------------
 # Raw signals chart - with personal baseline band and optional
 # normalization when signals on very different scales are compared
-# ca se vede ca pl..
 # -----------------------------------------------------------------
 st.markdown("### Vitals over time")
 
@@ -380,8 +415,8 @@ col_a, col_b = st.columns([3, 1])
 with col_a:
     signal_choice = st.multiselect(
         "Signals to display",
-        ["heart_rate", "spo2", "body_battery", "heart_rate_variability", "steps"],
-        default=["heart_rate", "body_battery"],
+        all_signals,
+        default=all_signals if is_doctor_view else ["heart_rate", "body_battery"],
     )
 with col_b:
     normalize = st.checkbox("Normalize (0-1)", value=len(signal_choice) > 2)
@@ -446,26 +481,28 @@ if signal_choice:
                "not against a general population threshold.")
 
 # -----------------------------------------------------------------
-# Share with doctor (simple demo version)
+# Share with doctor (simple demo version) - patient-facing action,
+# doesn't make sense to show when the doctor is already viewing
 # -----------------------------------------------------------------
-with st.expander(" Share with doctor"):
-    st.write(f"**Patient:** #{selected_patient}")
-    st.write(f"**Current risk (next 12h):** {risk_score*100:.0f}% ({risk_label})")
-    st.write(f"**Model confidence:** {(1-uncertainty)*100:.0f}%")
-    main_factors = []
-    if all(col in latest.index for col in factor_cols):
-        main_factors = [latest[c] for c in factor_cols if pd.notna(latest[c])]
-        if main_factors:
-            st.write(f"**Main contributing signals:** {', '.join(main_factors)}")
-    st.write(f"**Last heart rate:** {latest['heart_rate']:.0f} bpm")
-    st.write(f"**Last SpO2:** {latest['spo2']:.0f}%")
+if not is_doctor_view:
+    with st.expander(" Share with doctor"):
+        st.write(f"**Patient:** #{selected_patient}")
+        st.write(f"**Current risk (next 12h):** {risk_score*100:.0f}% ({risk_label})")
+        st.write(f"**Model confidence:** {(1-uncertainty)*100:.0f}%")
+        main_factors = []
+        if all(col in latest.index for col in factor_cols):
+            main_factors = [latest[c] for c in factor_cols if pd.notna(latest[c])]
+            if main_factors:
+                st.write(f"**Main contributing signals:** {', '.join(main_factors)}")
+        st.write(f"**Last heart rate:** {latest['heart_rate']:.0f} bpm")
+        st.write(f"**Last SpO2:** {latest['spo2']:.0f}%")
 
-    pdf_bytes = generate_patient_pdf(selected_patient, latest, risk_label, main_factors)
-    st.download_button(
-        label="Download PDF report",
-        data=pdf_bytes,
-        file_name=f"patient_{selected_patient}_report.pdf",
-        mime="application/pdf",
-    )
-    st.caption("In a full version, this would also generate a secure "
-               "shareable link for the treating physician.")
+        pdf_bytes = generate_patient_pdf(selected_patient, latest, risk_label, main_factors)
+        st.download_button(
+            label="Download PDF report",
+            data=pdf_bytes,
+            file_name=f"patient_{selected_patient}_report.pdf",
+            mime="application/pdf",
+        )
+        st.caption("In a full version, this would also generate a secure "
+                   "shareable link for the treating physician.")
