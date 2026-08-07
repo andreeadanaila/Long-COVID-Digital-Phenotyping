@@ -1,9 +1,5 @@
 """
-STEP 1 - Run this ONCE (or whenever you want to refresh the dashboard
-with new data). It trains the final model and pre-computes the risk
-score + uncertainty for the last few days of every patient, saving a
-small file that the web app reads instantly (no need to reload 10
-million rows every time you open the dashboard).
+
 
 Output: dashboard_data.csv (small file, ready for the Streamlit app)
 """
@@ -11,14 +7,24 @@ Output: dashboard_data.csv (small file, ready for the Streamlit app)
 import pandas as pd
 import numpy as np
 import gc
+import json
+import os
+import time
+from threading import Event, Thread
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # -----------------------------------------------------------------
 # CONFIG
 # -----------------------------------------------------------------
 INPUT_PATH = "wearable_data_all_patients.csv"
 OUTPUT_DASHBOARD_PATH = "dashboard_data.csv"
+PERFORMANCE_METRICS_PATH = "performance_metrics.json"
 
 SIGNAL_COLS = [
     "heart_rate", "heart_rate_variability", "spo2", "steps",
@@ -33,9 +39,37 @@ DASHBOARD_WINDOW_DAYS = 3        # how many recent days to show per patient
 DISPLAY_RESOLUTION_MINUTES = 15  # downsample for a smoother, lighter chart
 
 # -----------------------------------------------------------------
+# PERFORMANCE MONITORING
+# -----------------------------------------------------------------
+# This records the real run time and peak resident memory for the report.
+# psutil is optional: install it with "pip install psutil" to include RSS.
+run_started = time.perf_counter()
+stage_times = {}
+peak_rss_bytes = 0
+monitor_stop = Event()
+
+def _monitor_memory():
+    global peak_rss_bytes
+    if psutil is None:
+        return
+    process = psutil.Process(os.getpid())
+    while not monitor_stop.wait(0.05):
+        peak_rss_bytes = max(peak_rss_bytes, process.memory_info().rss)
+
+monitor_thread = Thread(target=_monitor_memory, daemon=True)
+monitor_thread.start()
+
+def record_stage(name, started):
+    """Save elapsed seconds for a pipeline stage and start the next one."""
+    stage_times[name] = round(time.perf_counter() - started, 3)
+    print(f"{name}: {stage_times[name]:.3f} seconds")
+    return time.perf_counter()
+
+# -----------------------------------------------------------------
 # STEP 1: Load data
 # -----------------------------------------------------------------
 print("Loading data...")
+stage_started = time.perf_counter()
 dtype_map = {col: "float32" for col in SIGNAL_COLS}
 dtype_map["user_id"] = "int16"
 df = pd.read_csv(INPUT_PATH, dtype=dtype_map)
@@ -49,6 +83,7 @@ print(f"Sample value: {df['received_date'].iloc[0]}")
 
 df = df.sort_values(["user_id", "received_date"]).reset_index(drop=True)
 print(f"Total rows: {len(df):,}")
+stage_started = record_stage("load_and_sort_seconds", stage_started)
 
 # -----------------------------------------------------------------
 # STEP 2: Personal baseline, z-score, trend features (same as before)
@@ -89,6 +124,7 @@ df["target_future_risk"] = (
 )
 
 feature_cols = SIGNAL_COLS + zscore_cols + trend_cols
+stage_started = record_stage("feature_engineering_seconds", stage_started)
 
 # -----------------------------------------------------------------
 # STEP 3: Train the final model (same as before)
@@ -115,6 +151,7 @@ final_model = RandomForestClassifier(
 )
 final_model.fit(X_train_small, y_train_small)
 print("Model trained.")
+stage_started = record_stage("model_training_seconds", stage_started)
 
 del X_train_full, y_train_full, X_train_small, y_train_small
 gc.collect()
@@ -137,13 +174,31 @@ del df
 gc.collect()
 
 X_recent = df_recent[feature_cols]
+recent_rows_before_downsampling = len(X_recent)
+inference_started = time.perf_counter()
 df_recent["risk_score"] = final_model.predict_proba(X_recent)[:, 1]
 
-# Uncertainty: spread of predictions across individual trees
-tree_probs = np.array([
-    tree.predict_proba(X_recent)[:, 1] for tree in final_model.estimators_
-])
-df_recent["uncertainty"] = tree_probs.std(axis=0)
+# Uncertainty: spread of predictions across individual trees.  The previous
+# approach stacked every tree's probabilities in one (100 x N) array.  Keeping
+# only a running mean and mean-square gives the identical population standard
+# deviation while making uncertainty memory O(N), not O(number_of_trees x N).
+tree_mean = np.zeros(len(X_recent), dtype="float64")
+tree_mean_square = np.zeros(len(X_recent), dtype="float64")
+for tree in final_model.estimators_:
+    tree_probability = tree.predict_proba(X_recent)[:, 1]
+    tree_mean += tree_probability
+    tree_mean_square += tree_probability ** 2
+tree_mean /= len(final_model.estimators_)
+tree_mean_square /= len(final_model.estimators_)
+df_recent["uncertainty"] = np.sqrt(np.maximum(tree_mean_square - tree_mean ** 2, 0))
+del tree_mean, tree_mean_square, tree_probability
+gc.collect()
+
+inference_seconds = time.perf_counter() - inference_started
+stage_times["risk_and_uncertainty_seconds"] = round(inference_seconds, 3)
+stage_times["per_prediction_milliseconds"] = round(
+    inference_seconds * 1000 / max(len(X_recent), 1), 4
+)
 
 print("Risk scores computed.")
 
@@ -155,6 +210,7 @@ print("Risk scores computed.")
 # right now). No new dependency (SHAP etc.) needed for this.
 # -----------------------------------------------------------------
 print("Computing per-prediction explainability...")
+stage_started = time.perf_counter()
 
 readable_names = {
     "heart_rate": "Heart Rate", "heart_rate_variability": "Heart Rate Variability",
@@ -190,11 +246,13 @@ for rank in range(3):
     ]
 
 print("Explainability columns ready (top_factor_1/2/3).")
+stage_started = record_stage("explainability_seconds", stage_started)
 
 # -----------------------------------------------------------------
 # STEP 5: Downsample for a lighter, smoother dashboard file
 # -----------------------------------------------------------------
 print(f"Downsampling to {DISPLAY_RESOLUTION_MINUTES}-minute resolution...")
+stage_started = time.perf_counter()
 
 display_cols = (
     ["user_id", "received_date"] + SIGNAL_COLS
@@ -226,6 +284,31 @@ dashboard_data = pd.concat(dashboard_parts, ignore_index=True)
 dashboard_data = dashboard_data.dropna()
 
 dashboard_data.to_csv(OUTPUT_DASHBOARD_PATH, index=False)
+stage_started = record_stage("downsample_and_write_seconds", stage_started)
+
+# A compact, machine-readable record for the latency/memory/scalability
+# section of the report. Values are deliberately measured, not hard-coded.
+monitor_stop.set()
+monitor_thread.join()
+if psutil is not None:
+    peak_rss_bytes = max(peak_rss_bytes, psutil.Process(os.getpid()).memory_info().rss)
+performance_metrics = {
+    "dataset_rows": int(len(df_recent)),
+    "dashboard_rows": int(len(dashboard_data)),
+    "display_resolution_minutes": DISPLAY_RESOLUTION_MINUTES,
+    "row_reduction_percent": round(
+        100 * (1 - len(dashboard_data) / max(recent_rows_before_downsampling, 1)), 2
+    ),
+    "dashboard_file_bytes": os.path.getsize(OUTPUT_DASHBOARD_PATH),
+    "peak_rss_megabytes": round(peak_rss_bytes / 1024 ** 2, 1) if psutil is not None else None,
+    "peak_rss_note": "Install psutil to measure RSS" if psutil is None else "Sampled every 50 ms",
+    "timings_seconds": stage_times,
+    "total_runtime_seconds": round(time.perf_counter() - run_started, 3),
+    "memory_optimisation": "Streaming tree uncertainty uses O(N) memory instead of O(100*N).",
+}
+with open(PERFORMANCE_METRICS_PATH, "w", encoding="utf-8") as metrics_file:
+    json.dump(performance_metrics, metrics_file, indent=2)
+print(f"Performance metrics saved: {PERFORMANCE_METRICS_PATH}")
 print(f"\nSaved: {OUTPUT_DASHBOARD_PATH}")
 print(f"Dashboard file has {len(dashboard_data):,} rows "
       f"for {dashboard_data['user_id'].nunique()} patients.")
