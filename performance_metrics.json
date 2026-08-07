@@ -1,0 +1,20 @@
+{
+  "dataset_rows": 345680,
+  "dashboard_rows": 23120,
+  "display_resolution_minutes": 15,
+  "row_reduction_percent": 93.31,
+  "dashboard_file_bytes": 3574133,
+  "peak_rss_megabytes": 3794.5,
+  "peak_rss_note": "Sampled every 50 ms",
+  "timings_seconds": {
+    "load_and_sort_seconds": 13.515,
+    "feature_engineering_seconds": 12.022,
+    "model_training_seconds": 40.119,
+    "risk_and_uncertainty_seconds": 6.309,
+    "per_prediction_milliseconds": 0.0183,
+    "explainability_seconds": 0.279,
+    "downsample_and_write_seconds": 0.553
+  },
+  "total_runtime_seconds": 73.63,
+  "memory_optimisation": "Streaming tree uncertainty uses O(N) memory instead of O(100*N)."
+}
