@@ -1,0 +1,4 @@
+model,auroc,prauc
+Untuned RF (guessed params),0.8981202524960704,0.8580724324872647
+Tuned RF (RandomizedSearchCV),0.8951825440417218,0.8522277127016133
+Tuned Gradient Boosting (RandomizedSearchCV),0.8986070793183539,0.8610120844363583

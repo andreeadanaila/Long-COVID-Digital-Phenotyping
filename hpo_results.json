@@ -1,0 +1,41 @@
+{
+  "search_config": {
+    "n_iter": 15,
+    "cv_folds": 3,
+    "train_sample_size": 150000
+  },
+  "random_forest": {
+    "best_params": {
+      "n_estimators": 100,
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "max_features": "log2",
+      "max_depth": null
+    },
+    "cv_auroc": 0.912954778784773,
+    "test_auroc": 0.8951825440417218,
+    "test_prauc": 0.8522277127016133,
+    "search_time_sec": 1303.0232112407684
+  },
+  "gradient_boosting": {
+    "best_params": {
+      "min_samples_leaf": 40,
+      "max_iter": 100,
+      "max_depth": 10,
+      "learning_rate": 0.2,
+      "l2_regularization": 0.1
+    },
+    "cv_auroc": 0.9060122062146357,
+    "test_auroc": 0.8986070793183539,
+    "test_prauc": 0.8610120844363583,
+    "search_time_sec": 41.262670040130615
+  },
+  "untuned_baseline": {
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 14
+    },
+    "test_auroc": 0.8981202524960704,
+    "test_prauc": 0.8580724324872647
+  }
+}
