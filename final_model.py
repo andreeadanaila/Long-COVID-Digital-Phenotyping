@@ -2,9 +2,7 @@
 FINAL MODEL - adds trend features (personalization over the last hour)
 and uncertainty estimation (variance across Random Forest trees).
 
-Compares this final model against the best baseline from before
-(HistGradientBoosting, AUROC 0.908) to show whether the extra
-complexity is actually worth it.
+
 """
 
 import pandas as pd
@@ -33,8 +31,8 @@ FORECAST_HORIZON_MINUTES = 720
 Z_SCORE_THRESHOLD = 2.0
 ROLLING_WINDOW_MINUTES = 60      # trend window: last 1 hour
 
-PATIENT_SAMPLE = None            # set to e.g. 10 to test faster first
-TRAIN_SAMPLE_SIZE = 300_000      # rows used to train the final model
+PATIENT_SAMPLE = None          
+TRAIN_SAMPLE_SIZE = 300_000     
 
 # -----------------------------------------------------------------
 # STEP 1: Load data
@@ -59,7 +57,7 @@ df = df.sort_values(["user_id", "received_date"]).reset_index(drop=True)
 print(f"Total rows used: {len(df):,}")
 
 # -----------------------------------------------------------------
-# STEP 2: Personal baseline + z-score (same as before)
+# STEP 2: Personal baseline + z-score
 # -----------------------------------------------------------------
 print("Computing personal baseline per patient...")
 personal_stats = df.groupby("user_id")[SIGNAL_COLS].agg(["mean", "std"])
@@ -72,7 +70,7 @@ for col in SIGNAL_COLS:
 zscore_cols = [f"{col}_zscore" for col in SIGNAL_COLS]
 
 # -----------------------------------------------------------------
-# STEP 3: NEW - rolling trend features (last hour, per patient)
+# STEP 3:  rolling trend features (last hour, per patient)
 # This is what adds real "personalization over time" to the model:
 # is the patient's z-score trending up, or was it just a 1-minute spike?
 # -----------------------------------------------------------------
@@ -90,7 +88,7 @@ for col in zscore_cols:
 print("Trend features ready.")
 
 # -----------------------------------------------------------------
-# STEP 4: Risk event + forecasting target (same logic as before)
+# STEP 4: Risk event + forecasting target 
 # -----------------------------------------------------------------
 df["risk_event_now"] = (df[zscore_cols].abs() > Z_SCORE_THRESHOLD).any(axis=1)
 
@@ -111,8 +109,7 @@ df["target_future_risk"] = (
 print(f"Positive class percentage: {df['target_future_risk'].mean()*100:.2f}%")
 
 # -----------------------------------------------------------------
-# STEP 5: Train/test split BY PATIENT (same 60/20 split as before,
-# same random_state, so it's directly comparable to the baselines)
+# STEP 5: Train/test split BY PATIENT 
 # -----------------------------------------------------------------
 feature_cols = SIGNAL_COLS + zscore_cols + trend_cols
 
@@ -156,7 +153,7 @@ final_model = RandomForestClassifier(
 )
 final_model.fit(X_train_small, y_train_small)
 
-# Main prediction: average probability across all trees (as usual)
+
 final_probs = final_model.predict_proba(X_test)[:, 1]
 
 # Uncertainty: standard deviation of each tree's individual prediction
@@ -183,8 +180,7 @@ print("Either way, this model now also outputs a confidence score per "
       "prediction, which the baselines did not.")
 
 # -----------------------------------------------------------------
-# STEP 7: A few example predictions with their uncertainty, to show
-# in the report/demo what the output actually looks like
+# STEP 7: A few example predictions with their uncertainty
 # -----------------------------------------------------------------
 print("\n=== Example predictions (risk score + confidence) ===")
 example_df = pd.DataFrame({
