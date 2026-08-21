@@ -1,7 +1,5 @@
 """
-COMPARARE MODELE - genereaza graficul cerut de profa: toate modelele
-(cele 5 baseline + modelul final) comparate intr-un singur plot,
-AUROC si PR-AUC unul langa altul.
+COMPARARE MODELE
 
 
 """
@@ -10,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # -----------------------------------------------------------------
-# Rezultatele tale, pe tot dataset-ul (80 pacienti, 10.37M randuri)
+# Rezultatele 
 # -----------------------------------------------------------------
 RESULTS = {
     "B1 - Threshold rule":        {"auroc": 0.561, "prauc": 0.849},
@@ -33,7 +31,7 @@ fig, ax = plt.subplots(figsize=(11, 6))
 bars1 = ax.bar(x - width/2, auroc_vals, width, label="AUROC", color="#4C72B0")
 bars2 = ax.bar(x + width/2, prauc_vals, width, label="PR-AUC", color="#DD8452")
 
-# linia pentru "clasificator la intamplare" (AUROC=0.5)
+
 ax.axhline(0.5, color="gray", linestyle="--", linewidth=1, alpha=0.6)
 
 ax.set_ylabel("Scor")
@@ -43,7 +41,7 @@ ax.set_xticklabels(models, rotation=20, ha="right")
 ax.set_ylim(0, 1.05)
 ax.legend()
 
-# valorile afisate deasupra fiecarui bar
+
 for bars in (bars1, bars2):
     for bar in bars:
         height = bar.get_height()
