@@ -2,9 +2,7 @@
 FULL PIPELINE - risk label construction + 5 baseline models +
 ablation study + multi-seed robustness check.
 
-Input: wearable_data_all_patients.csv (80 patients, ~10.3M rows,
-already cleaned and merged).
-
+Input: wearable_data_all_patients.csv 
 
 """
 
@@ -36,8 +34,7 @@ SIGNAL_COLS = [
 FORECAST_HORIZON_MINUTES = 720   # 12 hours ahead (use 2880 for 48h)
 Z_SCORE_THRESHOLD = 2.0          # how far from personal normal = "risk event"
 
-# Set to a number (e.g. 10) to test quickly on fewer patients first.
-# Set to None to run on all 80 patients.
+
 PATIENT_SAMPLE = None
 
 TREE_MODEL_SAMPLE_SIZE = 300_000  # training rows used for tree-based models
@@ -140,14 +137,14 @@ y_test = test_df["target_future_risk"]
 print(f"\nTrain patients: {len(train_patients)}, test patients: {len(test_patients)}")
 print(f"Train rows: {len(X_train):,}, test rows: {len(X_test):,}")
 
-# free memory from large dataframes we no longer need as-is
+
 del df, train_df, test_df
 gc.collect()
 
 # Per-minute data is highly autocorrelated (one minute looks almost
 # identical to the next) - tree-based models don't need all rows.
 # We use a smaller random sample just for them. Logistic Regression
-# stays on the full X_train (it's a much lighter model).
+# stays on the full X_train.
 if len(X_train) > TREE_MODEL_SAMPLE_SIZE:
     sample_idx = X_train.sample(n=TREE_MODEL_SAMPLE_SIZE, random_state=42).index
     X_train_small = X_train.loc[sample_idx]
@@ -166,13 +163,13 @@ print("=" * 60)
 
 results = []
 
-# B1 - Simple threshold rule (no ML): risk = any z-score already over threshold
+# B1 - Simple threshold rule: risk = any z-score already over threshold
 b1_preds = (X_test[zscore_cols].abs() > Z_SCORE_THRESHOLD).any(axis=1).astype(int)
 results.append(("B1 - Threshold rule", None,
                  roc_auc_score(y_test, b1_preds),
                  average_precision_score(y_test, b1_preds)))
 
-# B2 - Logistic Regression (with balanced class weights!)
+# B2 - Logistic Regression 
 b2 = LogisticRegression(max_iter=1000, class_weight="balanced")
 b2.fit(X_train, y_train)
 b2_probs = b2.predict_proba(X_test)[:, 1]
@@ -182,7 +179,7 @@ results.append(("B2 - Logistic Regression", b2,
 del b2
 gc.collect()
 
-# B3 - Random Forest (with balanced class weights!) - on the reduced sample
+# B3 - Random Forest 
 b3 = RandomForestClassifier(n_estimators=50, max_depth=12, random_state=42,
                              class_weight="balanced", n_jobs=2)
 b3.fit(X_train_small, y_train_small)
@@ -193,7 +190,7 @@ results.append(("B3 - Random Forest", b3,
 del b3
 gc.collect()
 
-# B4 - Isolation Forest (unsupervised anomaly detection) - on the reduced sample
+# B4 - Isolation Forest 
 b4 = IsolationForest(random_state=42, contamination="auto", n_jobs=2)
 b4.fit(X_train_small)
 b4_scores = -b4.score_samples(X_test)  # higher score = more abnormal
@@ -204,8 +201,7 @@ del b4
 gc.collect()
 
 # B5 - Gradient Boosting: using HistGradientBoostingClassifier, the
-# variant built for large datasets (much more memory-efficient than
-# the classic GradientBoostingClassifier)
+# variant built for large datasets 
 sample_weights = compute_sample_weight(class_weight="balanced", y=y_train_small)
 b5 = HistGradientBoostingClassifier(random_state=42, max_iter=150)
 b5.fit(X_train_small, y_train_small, sample_weight=sample_weights)
